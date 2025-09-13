@@ -1,0 +1,13 @@
+__pycache__
+*logs
+*wandb
+*results
+.venv
+/venv
+
+/data
+/lvef_patients
+
+*.log
+*.sh
+*.ipynb
