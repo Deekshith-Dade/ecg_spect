@@ -46,20 +46,41 @@ def main():
     h = AttrDict(json_config)
     
     baseDir = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/spect_ecg_gan/checkpoints"
-    # h.checkpoint is in format (formattedtime, step, wandbrunid)
+    # h.checkpoint is in format (formattedtime, wandbrunid, step)
     wandbrunid = None
-    checkpoint_step = None
-    if len(h.checkpoint) :
-       project_name = h.checkpoint_path[0] 
-       checkpoint_step = h.checkpoint_path[1]
-       wandbrunid = h.checkpoint_path[2]
+    prev_model_step = None
+    if len(h.prev_model) :
+       project_name = h.prev_model[0] 
+       wandbrunid = h.prev_model[1]
+       if len(h.prev_model) > 2:
+           prev_model_step = int(h.prev_model[2])
+           step = f"{prev_model_step:08d}"
+           assert os.path.isfile(f"{baseDir}/{project_name}/{step}/do_{step}"), "File mentioned in the config doesn't exist"
+       else:
+            # Find the biggest checkpoint available in the folder
+           checkpoint_dir = f"{baseDir}/{project_name}"
+           if os.path.exists(checkpoint_dir):
+               # Get all directories in the checkpoint folder
+               checkpoint_dirs = [d for d in os.listdir(checkpoint_dir) 
+                                if os.path.isdir(os.path.join(checkpoint_dir, d)) and d.isdigit()]
+               if checkpoint_dirs:
+                   # Find the directory with the highest number
+                   prev_model_step = max(int(d) for d in checkpoint_dirs)
+                   print(f"Using highest checkpoint: {prev_model_step}")
+               else:
+                   print("No checkpoint directories found")
+                   return
+           else:
+               print(f"Checkpoint directory {checkpoint_dir} does not exist")
+               return
+
     else:
         current_time = datetime.datetime.now()
         project_name = current_time.strftime("%Y-%m-%d_%H-%M-%S")
     
     a.checkpoint_path = f"{baseDir}/{project_name}"
-    h['checkpoint_step'] = checkpoint_step
     print(f"Checkpoint Path is {a.checkpoint_path}")
+    h['prev_model_step'] = prev_model_step
     
     build_env(a.config, 'config.json', a.checkpoint_path)
 

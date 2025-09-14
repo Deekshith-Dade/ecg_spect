@@ -1,4 +1,5 @@
 import itertools
+from ntpath import isdir
 import os
 import time
 
@@ -39,20 +40,32 @@ class Training:
             os.makedirs(a.checkpoint_path, exist_ok=True)
             print(f"Checkpoints Directory: {a.checkpoint_path}")
         
-        if self.use_ddp:
-            self.generator = DistributedDataParallel(self.generator, device_ids=[self.gpu_id]).to(self.device)
-            self.mpd = DistributedDataParallel(self.mpd, device_ids=[self.gpu_id]).to(self.device)
-            self.msd = DistributedDataParallel(self.msd, device_ids=[self.gpu_id]).to(self.device)
-        
-        
         # Optimizer and Scheduler    
         self.optim_g = torch.optim.AdamW(self.generator.parameters(), self.h.learning_rate, betas=[self.h.adam_b1, self.h.adam_b2])
         self.optim_d = torch.optim.AdamW(itertools.chain(self.msd.parameters(),
                                                          self.mpd.parameters()),
                                          self.h.learning_rate, betas=[self.h.adam_b1, self.h.adam_b2])
         
+        # Checkpoint Loading
+        if os.path.isdir(self.checkpoint_path) and h['prev_model_step'] is not None:
+            step = f"{h['prev_model_step']:08d}"
+            state_dict_g = torch.load(f"{self.checkpoint_path}/{step}/g_{step}", map_location=self.device)
+            state_dict_do = torch.load(f"{self.checkpoint_path}/{step}/do_{step}", map_location=self.device)
+            self.generator.load_state_dict(state_dict_g['generator'])
+            self.mpd.load_state_dict(state_dict_do['mpd'])
+            self.msd.load_state_dict(state_dict_do['msd'])
+            self.steps = state_dict_do['steps'] + 1
+            self.last_epoch = state_dict_do['epoch']
+            self.optim_g.load_state_dict(state_dict_do['optim_g'])
+            self.optim_d.load_state_dict(state_dict_do['optim_d'])
+
         self.scheduler_g = torch.optim.lr_scheduler.ExponentialLR(self.optim_g, gamma=self.h.lr_decay)
         self.scheduler_d = torch.optim.lr_scheduler.ExponentialLR(self.optim_d, gamma=self.h.lr_decay)
+        
+        if self.use_ddp:
+            self.generator = DistributedDataParallel(self.generator, device_ids=[self.gpu_id]).to(self.device)
+            self.mpd = DistributedDataParallel(self.mpd, device_ids=[self.gpu_id]).to(self.device)
+            self.msd = DistributedDataParallel(self.msd, device_ids=[self.gpu_id]).to(self.device)
         
         # Data prep
         self.train_dataset, self.val_dataset = get_datasets(1.0)
