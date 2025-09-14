@@ -81,6 +81,7 @@ def get_datasets(scale_training_size=1.0):
         train_patients = train_patients[:int(
             len(train_patients) * scale_training_size)]
     val_patients = unique_patients[split_idx:]
+    val_patients = val_patients[:int(len(val_patients)*0.5)]
 
     print(f"Total patients: {len(unique_patients)}")
     print(f"Train patients: {len(train_patients)}")

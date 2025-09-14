@@ -7,7 +7,7 @@ matplotlib.use("Agg")
 import matplotlib.pylab as plt
 
 
-def plot_spectrogram(original, reproduced):
+def plot_spectrogram(original, reproduced, prefix=""):
     fig, ax = plt.subplots(1, 2, figsize=(24, 6))
     im = ax[0].imshow(
         original,
@@ -15,25 +15,25 @@ def plot_spectrogram(original, reproduced):
         origin='lower',
         cmap='viridis',
     )
-    ax[0].set_title('Original')
+    ax[0].set_title(f'{prefix} Original')
     im = ax[1].imshow(
         reproduced,
         aspect='auto',
         origin='lower',
         cmap='viridis',
     )
-    ax[1].set_title('Reproduced')
+    ax[1].set_title(f'{prefix} Reproduced')
 
     fig.canvas.draw()
     plt.close()
 
     return fig
 
-def plot_ecg_leads(original, reproduced):
+def plot_ecg_leads(original, reproduced, prefix=""):
     fig, axs = plt.subplots(figsize=(4*15, 4*2.5))
     axs.plot(list(range(reproduced.shape[-1])), original, linewidth=2, color='red')
     axs.plot(list(range(original.shape[-1])), reproduced, linewidth=1, color='blue', linestyle="--")
-    
+    axs.set_title(f'{prefix} leads')
     fig.canvas.draw()
     plt.close()
     return fig

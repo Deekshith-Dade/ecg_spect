@@ -21,6 +21,7 @@ parser.add_argument('--num_workers', default=4, type=int, metavar='N')
 parser.add_argument('--epochs', default=100, type=int, help="Number of epochs to train")
 parser.add_argument('--lr', default=1e-4, type=float, help='Learning Rate')
 
+
 bce_loss = torch.nn.BCEWithLogitsLoss()
 
 def normalize(train_loader):
