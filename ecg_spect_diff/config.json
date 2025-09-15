@@ -1,0 +1,15 @@
+{
+    "dataset_config": {
+        "data_path": "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/ecg_spect_diff/parquet_patients/ecgs_patients.parquet",
+        "dataDir": "/uufs/sci.utah.edu/projects/ClinicalECGs/AllClinicalECGs/",
+        "timeCutOff": 960000,
+        "lowerCutOff": 0,
+        "randSeed": 7777,
+        "scale_training_size": 1.0,
+        "kcl_params": {
+            "lowThresh": 4.0,
+            "highThresh": 5.0,
+            "highThreshRestrict": 11.0
+        }
+    }
+}

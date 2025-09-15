@@ -23,8 +23,6 @@ def convert_to_spectrogram(ecg):
     
     return data
     
-
-
 class ECGToSpectrogramDataset(Dataset):
     def __init__(self, baseDir, ecgs, patientIds):
         self.baseDir = baseDir

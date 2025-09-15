@@ -7,8 +7,10 @@ __pycache__
 
 /data
 /lvef_patients
+/parquet_patients
 *checkpoints
 
 *.log
 *.sh
 *.ipynb
+*.parquet

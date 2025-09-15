@@ -7,8 +7,8 @@ import torch
 from torch.distributed import init_process_group, destroy_process_group
 import wandb
 
-from env import AttrDict, build_env
-from train import Training
+from spect_ecg_gan.env import AttrDict, build_env
+from spect_ecg_gan.train import Training
 
 
 def ddp_setup():
@@ -26,7 +26,7 @@ def main():
     ##### Arguments Setup #######
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--config', default='config_v1.json')
+    parser.add_argument('--config', default='./spect_ecg_gan/config_v1.json')
     parser.add_argument('--training_epochs', default=3000, type=int)
     parser.add_argument('--logtowandb', default=False, action="store_true")
     parser.add_argument('--logging_interval', default=50, type=int)
@@ -45,6 +45,8 @@ def main():
     json_config = json.loads(data)
     h = AttrDict(json_config)
     
+
+    #################### Checkpoint Setup #################### 
     baseDir = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/spect_ecg_gan/checkpoints"
     # h.checkpoint is in format (formattedtime, wandbrunid, step)
     wandbrunid = None
@@ -84,6 +86,7 @@ def main():
     
     build_env(a.config, 'config.json', a.checkpoint_path)
 
+    #################### Seed and Launch Training ####################
     torch.manual_seed(h.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(h.seed)

@@ -10,9 +10,9 @@ import torch.nn.functional as F
 import torch.distributed as dist
 import wandb
 
-from models import Generator, MultiPeriodDiscriminator, MultiScaleDiscriminator, discriminator_loss, generator_loss, feature_loss
-from dataset import get_datasets, convert_to_spectrogram
-from utils import plot_ecg_leads, plot_spectrogram
+from spect_ecg_gan.models import Generator, MultiPeriodDiscriminator, MultiScaleDiscriminator, discriminator_loss, generator_loss, feature_loss
+from spect_ecg_gan.dataset import get_datasets, convert_to_spectrogram
+from spect_ecg_gan.utils import plot_ecg_leads, plot_spectrogram
 
 class Training:
     def __init__(self, a, h):
@@ -205,11 +205,12 @@ class Training:
                                 
                                 val_err_total += F.l1_loss(y_mel_test.to(self.device), y_g_hat_mel_test).item()
 
-                                if not validation_plot:
-                                    fig = plot_spectrogram(x_test[0].detach().cpu(), y_g_hat_mel_test[0].detach().cpu(), prefix="val")
+                                if not validation_plot or torch.rand(1).item() < 0.5 or j == len(self.validation_loader)-1:
+                                    ind = torch.randint(0, x_test.shape[0], (1,)).item()
+                                    fig = plot_spectrogram(x_test[ind].detach().cpu(), y_g_hat_mel_test[ind].detach().cpu(), prefix="val")
                                     training_log['val_spectrograms'] = fig
                                     
-                                    fig = plot_ecg_leads(y_test[0].squeeze().detach().cpu(), y_g_hat_test[0].squeeze().detach().cpu(), prefix="val")
+                                    fig = plot_ecg_leads(y_test[ind].squeeze().detach().cpu(), y_g_hat_test[ind].squeeze().detach().cpu(), prefix="val")
                                     training_log['val_ecgs'] = fig
 
                                     validation_plot = True
@@ -219,7 +220,7 @@ class Training:
                             validation_string = f" Validation Error: {val_err:4.6f}"
                                 
                     # Wandb Logging        
-                    if self.steps % self.log_interval == 0:
+                    if self.steps % self.log_interval == 0 and self.a.logtowandb:
                         # wandb log
                         if training_log is None:
                             training_log = {}
@@ -236,7 +237,7 @@ class Training:
                         fig = plot_ecg_leads(y[0].squeeze().detach().cpu(), y_g_hat[0].squeeze().detach().cpu(), prefix="train") 
                         training_log['ecgs'] = fig
                         
-                    if training_log:
+                    if training_log and self.a.logtowandb:
                         wandb.log(training_log)
                     
                     # STDOUT Logging
