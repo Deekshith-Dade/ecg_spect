@@ -1,7 +1,7 @@
 {
     "resblock": "1",
     "num_gpus": 0,
-    "batch_size": 1024,
+    "batch_size": 900,
     "learning_rate": 0.0002,
     "adam_b1": 0.8,
     "adam_b2": 0.99,
@@ -22,5 +22,5 @@
     "win_size": 1024,
 
     "num_workers": 2,
-    "prev_model": ["2025-09-14_01-39-31", "vfedhfls", 50000] 
+    "prev_model": ["2025-09-14_01-39-31", "vfedhfls", 89000] 
 }
