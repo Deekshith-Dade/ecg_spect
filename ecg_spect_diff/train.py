@@ -1,17 +1,22 @@
 import os
-from PIL import Image
-from diffusers.pipelines.deepfloyd_if import safety_checker
 import torch
-
 from tqdm.auto import tqdm
 from diffusers import StableDiffusionPipeline
 
 import wandb
 
-from ecg_spect_diff.utils import plot_image_channels_grid, resize_and_stack_images
+from spect_ecg_gan.models import Generator
+from ecg_spect_diff.utils import (
+    plot_image_channels_grid, 
+    resize_and_stack_images, 
+    load_generator_model, 
+    plot_overlapping_ecgs
+)
+from ecg_spect_diff.dataset.dataset import SpectrogramExtractor
+
 
 class Training:
-    def __init__(self, accelerator, unet, vae, text_encoder, tokenizer, noise_scheduler, train_dataloader, optimizer, args, global_min, global_max):
+    def __init__(self, accelerator, unet, vae, text_encoder, tokenizer, noise_scheduler, train_dataloader, optimizer, args, global_min, global_max, plot_ecgs=True, checkpoint_path=None):
         self.accelerator = accelerator
         self.unet = unet
         self.vae = vae
@@ -23,8 +28,20 @@ class Training:
         self.args = args
         self.global_min = global_min
         self.global_max = global_max
+        self.plot_ecgs = plot_ecgs
+        self.checkpoint_path = checkpoint_path
         print(f"Values {self.global_min}, {self.global_max} from {self.accelerator.device}")
-    
+        self.generator = None
+        self.spectrogram_extractor = None
+        if self.accelerator.is_main_process and self.plot_ecgs:
+            if self.checkpoint_path is None:
+                raise "Checkpoing path Not Found Error"
+            else:
+                self.generator = load_generator_model(self.checkpoint_path)
+                self.generator = self.generator.to(self.accelerator.device)
+                self.generator.eval()
+                self.spectrogram_extractor = SpectrogramExtractor()
+            
     def _normalize_spectrogram(self, spec):
         spec_0_1 = (spec - self.global_min) / (self.global_max - self.global_min)
         spec_neg1_1 = spec_0_1 * 2.0 - 1.0
@@ -53,16 +70,17 @@ class Training:
                     scheduler=self.noise_scheduler
                 )
                 pipeline.save_pretrained(self.args.output_dir)
-
     
     def train_one_epoch(self, epoch):
         self.unet.train()
         total_loss = 0.
         for step, batch in enumerate(tqdm(self.dataloader, desc=f"Training Epoch {epoch}", disable=not self.accelerator.is_main_process)):
             with self.accelerator.accumulate(self.unet):
+                
                 data = self._normalize_spectrogram(batch['image'])
                 latents = self.vae.encode(data).latent_dist.sample()
                 latents = latents * self.vae.config.scaling_factor
+               
                 
                 noise = torch.randn_like(latents)
                 bsz = latents.shape[0]
@@ -105,40 +123,66 @@ class Training:
                 )
                 pipeline = pipeline.to(self.accelerator.device)
                 val_images = self.sample_images(pipeline, 4)
-                figs = plot_image_channels_grid(val_images)
+                full_figs = plot_image_channels_grid(val_images)
                 
-                # Calculate average loss up to this point
+               # Calculate average loss up to this point 
                 avg_loss = total_loss / (step + 1)
-                
-                # Log to wandb
-                self.accelerator.log({
+                training_log = {
                     "train/loss": avg_loss,
                     "train/step": step,
                     "train/epoch": epoch,
-                    "samples": [wandb.Image(figs)]
-                })
+                }
+                if self.plot_ecgs:
+                    ecg_plots = self.get_ecg_plots(val_images)
+                    for i, fig in enumerate(ecg_plots):
+                        training_log[f'ecg_sample_{i+1}'] = fig
+
+
+                for i, fig in enumerate(full_figs):
+                    training_log[f'sample_{i+1}'] = wandb.Image(fig)
+                
+                                
+                # Log to wandb
+                self.accelerator.log(training_log)
                 
             if step % self.args.save_steps == 0:
                 self.save_progress(epoch, step)
                 
         return  total_loss / len(self.dataloader)
     
+    def get_ecg_plots(self, images):
+        B = images.shape[0]
+        IMG_SIZE = 512
+        images = images.view(-1, IMG_SIZE, IMG_SIZE).to(self.accelerator.device) # B*3, 256, 256
+        out = self.spectrogram_extractor(images) # B * 3, 8, 65, 126
+        out = out.view(-1, 65, 126) # B * 3 * 8, 65, 126
+        with torch.no_grad():
+            res = self.generator(out) # B * 3 * 8, 1, 2500
+        final_ecgs = res.view(B, -1, 8, 2500).detach().cpu() # B , 3, 8, 2500
+
+        out = []
+        for i in range(B):
+            fig = plot_overlapping_ecgs(final_ecgs[i], f"sample_{i+1}")
+            out.append(fig)
+            
+        return out
+        
+    
     def save_progress(self, epoch, step):
         if self.accelerator.is_main_process:
             save_path = os.path.join(self.args.output_dir, f'checkpoint-{epoch}-{step}')
             self.accelerator.save_state(save_path)
 
-
     def sample_images(self, pipeline, num_images=4):
         pipeline.unet.eval()
 
         generator = torch.Generator(device=pipeline.device).manual_seed(42)
-        prompts = ["ECG with severe hyperkalemia", "ECG with healthy signs"] * int(num_images/2)
+        prompts = ["ECG that shows severe stage hyperkalemia", "ECG that shows normal signs of hyperkalemia"] * int(num_images/2)
         
         with torch.no_grad():
             images = pipeline(
                 prompts,
-                num_inference_steps=50,
+                num_inference_steps=100,
                 generator=generator
             ).images
        

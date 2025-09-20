@@ -15,7 +15,7 @@ from diffusers import (
 from PIL import Image
 from torch.utils.data import DataLoader
 from ecg_spect_diff.dataset.dataset import getKCLTrainTestDataset
-from transformers import CLIPTextModel, CLIPTokenizer
+from transformers import CLIPTextModel, CLIPTokenizer, BertTokenizer, BertModel
 import torch.distributed as dist
 from tqdm.auto import tqdm
 
@@ -75,9 +75,11 @@ def main(args, dataset_config):
 
     #################### LOAD MODELS ####################
     noise_scheduler = DDPMScheduler.from_pretrained(args.model_name_or_path, subfolder="scheduler")
-    tokenizer = CLIPTokenizer.from_pretrained(args.model_name_or_path, subfolder="tokenizer")
-    text_encoder = CLIPTextModel.from_pretrained(args.model_name_or_path, subfolder="text_encoder")
-    vae = AutoencoderKL.from_pretrained(args.model_name_or_path, subfolder="vae")
+    # tokenizer = CLIPTokenizer.from_pretrained(args.model_name_or_path, subfolder="tokenizer")
+    # text_encoder = CLIPTextModel.from_pretrained(args.model_name_or_path, subfolder="text_encoder")
+    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", subfolder="tokenizer")
+    text_encoder = BertModel.from_pretrained("bert-base-uncased", subfolder="bert")
+    vae = AutoencoderKL.from_pretrained(args.model_name_or_path, subfolder="vqvae")
     unet = UNet2DConditionModel.from_pretrained(args.model_name_or_path, subfolder="unet")
     
     vae.requires_grad_(False)
@@ -132,7 +134,10 @@ def main(args, dataset_config):
     global_max = stats_tensor[1].item()
     
     # Training Loop
-    training = Training(accelerator, unet, vae, text_encoder, tokenizer, noise_scheduler, train_dataloader, optimizer, args, global_min, global_max)
+    training = Training(accelerator, unet, vae, text_encoder, tokenizer, noise_scheduler, 
+                        train_dataloader, optimizer, args, global_min, global_max, 
+                        plot_ecgs=True, 
+                        checkpoint_path="spect_ecg_gan/checkpoints/2025-09-14_01-39-31/00085000/g_00085000")
     training.train()
 
     accelerator.end_training()
@@ -141,8 +146,8 @@ def main(args, dataset_config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Finetune Stable Diffusion on ECG Spectrograms")
-    parser.add_argument("--model_name_or_path", type=str, default="runwayml/stable-diffusion-v1-5")
-    parser.add_argument("--train_batch_size", type=int, default=256)
+    parser.add_argument("--model_name_or_path", type=str, default="CompVis/ldm-text2im-large-256")
+    parser.add_argument("--train_batch_size", type=int, default=64)
     parser.add_argument("--num_train_epochs", type=int, default=100)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
     parser.add_argument("--learning_rate", type=float, default=1e-5)

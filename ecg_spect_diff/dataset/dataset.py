@@ -45,7 +45,7 @@ class ECG_KCL_Datasetloader(Dataset):
         self.augs = Loader.TwoCropsTransform(transforms.Compose([
             Loader.SpatialTransform(),
         ]))
-        
+        self.resize = transforms.Resize((256, 256))
 
     def __getitem__(self, item):
         ecgName = self.ecgs[item].replace('.xml', f'_{self.rhythmType}.npy')
@@ -76,7 +76,8 @@ class ECG_KCL_Datasetloader(Dataset):
         img = grid.reshape(256, 252)
         img = F.pad(img, (2, 2), "constant", 0) # 256 x 256
         img = img.expand(3, -1, -1)             # 3 x 256 x 256
-
+        img = self.resize(img)
+        
         item = {}
         item['image'] = img
         item['ecgs'] = ecgs
@@ -195,9 +196,11 @@ class SpectrogramExtractor(torch.nn.Module):
         
         self.pad_left = 2
         self.pad_right = 2
+        self.resize = transforms.Resize((256, 256))
     
     def forward(self, x):
         
+        x = self.resize(x)
         unpadded_width = x.shape[-1] - self.pad_left - self.pad_right
         x = x[:, :, self.pad_left : self.pad_left + unpadded_width] # 8 x 256 x 252
         

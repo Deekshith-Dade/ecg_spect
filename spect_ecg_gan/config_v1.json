@@ -22,5 +22,5 @@
     "win_size": 1024,
 
     "num_workers": 2,
-    "prev_model": ["2025-09-14_01-39-31", "vfedhfls", 89000] 
+    "prev_model": ["2025-09-14_01-39-31", "vfedhfls"] 
 }
