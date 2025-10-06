@@ -28,6 +28,7 @@ def load_generator_model(checkpoint_path):
 
 def plot_overlapping_ecgs(ecgs, label):
     # ecgs should be of shape (n, 8, 2500)
+    ecgs = ecgs.detach().cpu()
     n_ecgs, leads, ti = ecgs.shape
     fig, axs = plt.subplots(8, figsize=(4*15, 4*leads*2.5))
     fig.suptitle(f'{label}', fontsize=50, y=0.92)
@@ -57,9 +58,6 @@ def plot_image_channels_grid(image_batch):
     num_images, height, width, num_channels = image_batch.shape
     
     full_figs = []
-    
-    if num_images == 1:
-        axes = axes.reshape(1, -1)
     
     for i in range(num_images):
         fig, axes = plt.subplots(1, num_channels, figsize=(3 * 8 + 6, 8))

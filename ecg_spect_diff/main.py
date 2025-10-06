@@ -10,7 +10,10 @@ from diffusers import (
     StableDiffusionPipeline,
     DDPMScheduler,
     UNet2DConditionModel,
-    AutoencoderKL
+    AutoencoderKL,
+    UNet2DModel,
+    VQModel,
+    DDIMScheduler
 )
 from PIL import Image
 from torch.utils.data import DataLoader
@@ -75,12 +78,16 @@ def main(args, dataset_config):
 
     #################### LOAD MODELS ####################
     noise_scheduler = DDPMScheduler.from_pretrained(args.model_name_or_path, subfolder="scheduler")
-    # tokenizer = CLIPTokenizer.from_pretrained(args.model_name_or_path, subfolder="tokenizer")
-    # text_encoder = CLIPTextModel.from_pretrained(args.model_name_or_path, subfolder="text_encoder")
-    tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", subfolder="tokenizer")
-    text_encoder = BertModel.from_pretrained("bert-base-uncased", subfolder="bert")
-    vae = AutoencoderKL.from_pretrained(args.model_name_or_path, subfolder="vqvae")
+    tokenizer = CLIPTokenizer.from_pretrained(args.model_name_or_path, subfolder="tokenizer")
+    text_encoder = CLIPTextModel.from_pretrained(args.model_name_or_path, subfolder="text_encoder")
+    # tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", subfolder="tokenizer")
+    # text_encoder = BertModel.from_pretrained("bert-base-uncased", subfolder="bert")
+    vae = AutoencoderKL.from_pretrained(args.model_name_or_path, subfolder="vae")
     unet = UNet2DConditionModel.from_pretrained(args.model_name_or_path, subfolder="unet")
+
+    # unet = UNet2DModel.from_pretrained("CompVis/ldm-celebahq-256", subfolder="unet")
+    # vae = VQModel.from_pretrained("CompVis/ldm-celebahq-256", subfolder="vqvae")
+    # noise_scheduler = DDIMScheduler.from_config("CompVis/ldm-celebahq-256", subfolder="scheduler")
     
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
@@ -137,7 +144,7 @@ def main(args, dataset_config):
     training = Training(accelerator, unet, vae, text_encoder, tokenizer, noise_scheduler, 
                         train_dataloader, optimizer, args, global_min, global_max, 
                         plot_ecgs=True, 
-                        checkpoint_path="spect_ecg_gan/checkpoints/2025-09-14_01-39-31/00085000/g_00085000")
+                        checkpoint_path="spect_ecg_gan/checkpoints/2025-09-14_01-39-31/00200000/g_00200000")
     training.train()
 
     accelerator.end_training()
@@ -146,7 +153,7 @@ def main(args, dataset_config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Finetune Stable Diffusion on ECG Spectrograms")
-    parser.add_argument("--model_name_or_path", type=str, default="CompVis/ldm-text2im-large-256")
+    parser.add_argument("--model_name_or_path", type=str, default="runwayml/stable-diffusion-v1-5")
     parser.add_argument("--train_batch_size", type=int, default=64)
     parser.add_argument("--num_train_epochs", type=int, default=100)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
@@ -159,7 +166,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--save_steps", type=int, default=2500)
     parser.add_argument("--save_epochs", type=int, default=1)
-    parser.add_argument("--logging_steps", type=int, default=100)
+    parser.add_argument("--logging_steps", type=int, default=1000)
     parser.add_argument("--output_dir", type=str, default="./ecg_spect_diff/checkpoints")
     parser.add_argument("--project_name", type=str, default="project")
 
@@ -167,14 +174,14 @@ if __name__ == "__main__":
     datasetConfig = {
         "data_path": "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/ecg_spect_diff/parquet_patients/ecgs_patients.parquet",
         "dataDir": "/uufs/sci.utah.edu/projects/ClinicalECGs/AllClinicalECGs/",
-        "timeCutOff": 960000,
+        "timeCutOff": 1800,
         "lowerCutOff": 0,
         "randSeed": 7777,
         "scale_training_size": 1.0,
         "kcl_params": {
             "lowThresh": 4.0,
             "highThresh": 5.0,
-            "highThreshRestrict": 11.0
+            "highThreshRestrict": 8.5
         }
     }
     
