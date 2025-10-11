@@ -34,14 +34,16 @@ file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
 
-def get_dataset_min_max(dataloader):
+def get_dataset_min_max(dataloader, max_samples=None):
     global_min = float('inf')
     global_max = float('-inf')
     
+    samples = 0
     print("Calculating Min and Max over the dataset...")
     
     for batch in tqdm(dataloader):
         spectrograms = batch['image']
+        samples += spectrograms.shape[0]
         
         batch_min = torch.min(spectrograms)
         batch_max = torch.max(spectrograms)
@@ -50,6 +52,9 @@ def get_dataset_min_max(dataloader):
             global_min = batch_min.item()
         if batch_max > global_max:
             global_max = batch_max.item()
+        
+        if max_samples and samples > max_samples:
+            break
 
     return global_min, global_max
 

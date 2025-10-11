@@ -81,7 +81,6 @@ class Training:
                 # latents = self.vae.encode(data).latents
                 latents = latents * self.vae.config.scaling_factor
                
-                
                 noise = torch.randn_like(latents)
                 bsz = latents.shape[0]
                 timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz, ), device=self.accelerator.device)

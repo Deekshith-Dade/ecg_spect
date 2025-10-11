@@ -68,7 +68,7 @@ def plot_image_channels_grid(image_batch):
                     origin='lower',
                     cmap='viridis'
                         )
-            ax.set_title(f'Image {i+1}, Chanenel {j+1}')
+            ax.set_title(f'Image {i+1}, Channel {j+1}')
             ax.axis('off')
         plt.tight_layout(pad=0.5)
         fig.canvas.draw()
