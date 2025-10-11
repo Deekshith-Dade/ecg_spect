@@ -240,8 +240,8 @@ default_config_dict = {
 
     # Logging
     "log_steps": 10,
-    "eval_steps": 1000,
-    "save_steps": 10000,
+    "eval_steps": 500,
+    "save_steps": 5000,
     "num_log_images": 2,
 
     # Hardware
@@ -267,6 +267,6 @@ if __name__ == "__main__":
     current_time = datetime.now()
     project_name = current_time.strftime("%Y-%m-%d_%H-%M-%S")
     base_dir = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/spect_vae"
-    config.output_dir = f"{base_dir}/checkpoints/{current_time}"
+    config.output_dir = f"{base_dir}/checkpoints/{project_name}"
     args.project_name = project_name 
     main(args, config)

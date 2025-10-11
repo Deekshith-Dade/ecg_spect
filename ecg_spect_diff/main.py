@@ -93,6 +93,13 @@ def main(args, dataset_config):
     # unet = UNet2DModel.from_pretrained("CompVis/ldm-celebahq-256", subfolder="unet")
     # vae = VQModel.from_pretrained("CompVis/ldm-celebahq-256", subfolder="vqvae")
     # noise_scheduler = DDIMScheduler.from_config("CompVis/ldm-celebahq-256", subfolder="scheduler")
+
+    global_min, global_max = None, None
+    if args.vae_checkpoint and os.path.isfile(args.vae_checkpoint):
+        checkpoint_dict = torch.load(args.vae_checkpoint, map_location="cpu")
+        vae.load_state_dict(checkpoint_dict['vae_state_dict'])
+        global_min = checkpoint_dict['global_min']
+        global_max = checkpoint_dict['global_max']
     
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
@@ -133,17 +140,16 @@ def main(args, dataset_config):
     logger.info(f"  Total train batch size = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
 
-    stats_tensor = torch.zeros(2, device=accelerator.device)
+    if global_min is None and global_max is None:
+        if accelerator.is_main_process: 
+            global_min, global_max = get_dataset_min_max(stats_dataloader)
 
-    if accelerator.is_main_process:
-        global_min, global_max = get_dataset_min_max(stats_dataloader)
+            stats_tensor = torch.tensor([global_min, global_max], device=accelerator.device)
 
-        stats_tensor = torch.tensor([global_min, global_max], device=accelerator.device)
-
-    stats_tensor = broadcast(stats_tensor, from_process=0)
+        stats_tensor = broadcast(stats_tensor, from_process=0)
     
-    global_min = stats_tensor[0].item()
-    global_max = stats_tensor[1].item()
+        global_min = stats_tensor[0].item()
+        global_max = stats_tensor[1].item()
     
     # Training Loop
     training = Training(accelerator, unet, vae, text_encoder, tokenizer, noise_scheduler, 
@@ -174,6 +180,7 @@ if __name__ == "__main__":
     parser.add_argument("--logging_steps", type=int, default=1000)
     parser.add_argument("--output_dir", type=str, default="./ecg_spect_diff/checkpoints")
     parser.add_argument("--project_name", type=str, default="project")
+    parser.add_argument("--vae_checkpoint", type=str, default=None)
 
     args = parser.parse_args()
     datasetConfig = {
@@ -195,4 +202,5 @@ if __name__ == "__main__":
     base_dir = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/ecg_spect_diff"
     args.output_dir = f"{base_dir}/checkpoints/{current_time}"
     args.project_name = project_name 
+    args.vae_checkpoint = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/spect_vae/checkpoints/2025-10-10_20-34-13/00010000/checkpoint_vae_00010000.pt"
     main(args, datasetConfig)

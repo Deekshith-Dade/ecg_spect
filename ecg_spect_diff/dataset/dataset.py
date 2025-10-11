@@ -97,7 +97,7 @@ class ECG_KCL_Datasetloader(Dataset):
             condition_status = "Severe Stage Hyperkalemia"
 
         cond_inputs['text'] = f"ECG that shows {condition_status} with KCL value {kclVal:0.2f}"
-        cond_inputs['text'] = "an ECG spectrogram"
+        # cond_inputs['text'] = "an ECG spectrogram"
         item['cond_inputs'] = cond_inputs
         return item
 

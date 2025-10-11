@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn.functional as F
 
@@ -303,25 +304,35 @@ class VAETrainer:
 
         self.vae.train()
     
-    def save_checkpoint(self, path):
+    def save_checkpoint(self, path, only_vae = False):
         """Save model checkpoint"""
         if self.accelerator.is_main_process:
+            folder = f"{path}/{self.step:08d}"
+            os.makedirs(folder, exist_ok=True)
 
             unwrapped_vae = self.accelerator.unwrap_model(self.vae)
             unwrapped_disc = self.accelerator.unwrap_model(self.discriminator)
             
-            self.accelerator.save({
-                'step': self.step,
-                'vae_state_dict': unwrapped_vae.state_dict(),
-                'discriminator_state_dict': unwrapped_disc.state_dict(),
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                'optimizer_disc_state_dict': self.optimizer_disc.state_dict(),
-                'scheduler_state_dict': self.scheduler.state_dict(),
-                'scheduler_disc_state_dict': self.scheduler_disc.state_dict(),
-                'global_min': self.global_min,
-                'global_max': self.global_max,
-                'config': vars(self.config),
-            }, path)
+            if only_vae:
+                self.accelerator.save({
+                    'step': self.step,
+                    'vae_state_dict': unwrapped_vae.state_dict(),
+                    'global_min': self.global_min,
+                    'global_max': self.global_max
+                }, f"{folder}/checkpoint_vae_{self.step:08d}.pt")
+            else:
+                self.accelerator.save({
+                    'step': self.step,
+                    'vae_state_dict': unwrapped_vae.state_dict(),
+                    'discriminator_state_dict': unwrapped_disc.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'optimizer_disc_state_dict': self.optimizer_disc.state_dict(),
+                    'scheduler_state_dict': self.scheduler.state_dict(),
+                    'scheduler_disc_state_dict': self.scheduler_disc.state_dict(),
+                    'global_min': self.global_min,
+                    'global_max': self.global_max,
+                    'config': vars(self.config),
+                }, f"{folder}/checkpoint_{self.step:08d}.pt")
             
             self.accelerator.print(f"Checkpoint saved to {path}")
     
@@ -386,9 +397,10 @@ class VAETrainer:
                         self.accelerator.wait_for_everyone()
                     
                 # Save checkpoint
-                if self.step % self.config.save_steps == 0:
+                if self.accelerator.is_main_process and self.step % self.config.save_steps // 2 == 0:
                     self.accelerator.wait_for_everyone()
-                    self.save_checkpoint(self.config.output_dir / f"checkpoint_{self.step}.pt")
+                    self.save_checkpoint(f"{self.config.output_dir}", only_vae=True)
+                    self.save_checkpoint(f"{self.config.output_dir}")
                 
                 pbar.update(1)   
             

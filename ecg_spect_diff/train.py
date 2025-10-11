@@ -211,7 +211,7 @@ class Training:
 
         generator = torch.Generator(device=pipeline.device).manual_seed(42)
         prompts = ["ECG that shows severe stage hyperkalemia", "ECG that shows normal signs of hyperkalemia"] * int(num_images/2)
-        prompts = ["an ECG spectrogram", "an ECG spectrogram"] * int(num_images/2)
+        # prompts = ["an ECG spectrogram", "an ECG spectrogram"] * int(num_images/2)
         with torch.no_grad():
             images = pipeline(
                 prompts,
