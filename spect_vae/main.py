@@ -13,6 +13,7 @@ from datetime import datetime
 
 from ecg_spect_diff.main import get_dataset_min_max
 from spect_vae.dataset import get_datasets
+from spect_vae.discriminator import SpectrogramPatchDiscriminator
 from spect_vae.train import VAETrainer
 
 
@@ -63,7 +64,6 @@ def parse_args():
     parser = argparse.ArgumentParser(description="VAE Fine-tuning with Accelerate")
     parser.add_argument("--output_dir", type=str, default="output-dir-vae")
     parser.add_argument("--vae_model_id", type=str, default="runwayml/stable-diffusion-v1-5")
-    parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--learning_rate", type=float, default=1e-5)
     parser.add_argument("--total_steps", type=int, default=150000)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
@@ -97,7 +97,8 @@ def main(args, config):
         init_kwargs = {"wandb": {
             "entity": "deekshith",
             "resume": "allow",
-            "name": args.project_name
+            "name": args.project_name,
+            "notes": "spectrogram vae finetuning with a patch gan"
         }}
     )
 
@@ -124,9 +125,9 @@ def main(args, config):
     accelerator.print("Initializing VAE")
     vae = AutoencoderKL.from_pretrained(config.vae_model_id, subfolder="vae")
     for param in vae.encoder.parameters():
-            param.requires_grad = False
+            param.requires_grad = config.train_encoder
     for param in vae.quant_conv.parameters():
-        param.requires_grad = False
+        param.requires_grad = config.train_encoder
     
     trainable_params = (
         list(vae.decoder.parameters())+
@@ -135,7 +136,12 @@ def main(args, config):
     
     # Discriminator
     accelerator.print("Initializing Discriminator")
-    discriminator = SimpleDiscriminator()
+    discriminator = SpectrogramPatchDiscriminator(
+        in_channels=3,
+        base_channels=64,
+        n_layers=3,
+        use_spectral_norm=True
+    )
 
     # LPIPS
     accelerator.print("Loading LPIPS")
@@ -178,7 +184,7 @@ def main(args, config):
     
     stats_dataloader = DataLoader(
         train_ds,
-        batch_size=args.batch_size,
+        batch_size=config.batch_size,
         shuffle=False,
         num_workers=args.num_workers
     )
@@ -221,19 +227,21 @@ default_config_dict = {
 
     # Training hyperparameters
     "learning_rate": 1e-5,
-    "learning_rate_disc": 1e-4,
-    "batch_size": 8,  
+    "learning_rate_disc": 1e-5,
+    "batch_size": 32,  
     "gradient_accumulation_steps": 1,
     "num_epochs": 10,
     "total_steps": 150_000,
-    "warmup_steps": 4000,
+    "warmup_steps": 10000,
     "max_grad_norm": 1.0,  # Gradient clipping
 
     # Loss weights
     "cost_l2": 0.5,
-    "cost_lpips": 5.0,
-    "cost_disc": 0.005,
+    "cost_lpips": 5,
+    "cost_disc": 0.1,
     "cost_gradient_penalty": 10.0,
+    "train_encoder": False,
+    "kl_loss_weight": 1e-3,
 
     # Training strategy
     "disc_loss_skip_steps": 1000,

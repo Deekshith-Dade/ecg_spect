@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 
 import matplotlib.pyplot as plt
+from spect_vae.discriminator import GANLoss
 from ecg_spect_diff.utils import plot_image_channels_grid
 from ecg_spect_diff.dataset.dataset import SpectrogramExtractor
 from ecg_spect_diff.utils import (
@@ -37,12 +38,14 @@ class VAETrainer:
         self.global_min = global_min
         self.global_max = global_max
         
+        self.gan_loss = GANLoss(loss_type="hinge")
+        
         self.vocoder = None
         self.spectrogram_extractor = None
         
         if self.accelerator.is_main_process:
             if checkpoint_path is None:
-                raise "Checkpoint path Not Found"
+                raise ValueError("Checkpoint path Not Found")
             else:
                 self.generator = load_generator_model(checkpoint_path)
                 self.generator = self.generator.to(self.accelerator.device)
@@ -70,85 +73,106 @@ class VAETrainer:
         final_ecgs = res.view(B, -1, 8, 2500).detach().cpu() # B ,3, 8, 2500
         return final_ecgs
 
-    def encode_decode(self, images):
+    def encode_decode(self, images, encoder_tune=False):
         if hasattr(self.vae, 'module'):
             vae_model = self.vae.module
         else:
             vae_model = self.vae
-            
-        with torch.no_grad():
-            latents = vae_model.encode(images).latent_dist.mode()
+        
+        posterior = None
+        if encoder_tune: 
+            posterior = vae_model.encode(images).latent_dist
+            latents = posterior.mode()
+        else:
+            with torch.no_grad():
+                latents = vae_model.encode(images).latent_dist.mode()
         reconstruction = vae_model.decode(latents).sample
-        return reconstruction
+        return reconstruction, posterior
     
-    def compute_vae_loss(self, images, reconstruction):
+    def compute_vae_loss(self, images, reconstruction, posterior):
+        # reconstruction loss
         loss_l2 = F.mse_loss(reconstruction, images)
         
-        images_lpips = images * 2 - 1
-        recon_lpips = reconstruction * 2 - 1
-        loss_lpips = self.lpips_fn(recon_lpips, images_lpips).mean()
+        # lpips perceptual loss
+        loss_lpips = self.lpips_fn(reconstruction, images).mean()
+
+        # Loss KL
+        loss_kl = torch.tensor(0.0, device=images.device)
+        if posterior is not None:
+            loss_kl = posterior.kl().mean()
         
         # Adversarial Loss
         disc_fake_scores = self.discriminator(reconstruction)
-        loss_disc = F.softplus(-disc_fake_scores).mean()
-        
+        loss_disc = self.gan_loss(disc_fake_scores, is_real=True)
         disc_weight = self.config.cost_disc if self.step >= self.config.disc_loss_skip_steps else 0.0
         
         loss = (
             loss_l2 * self.config.cost_l2 +
             loss_lpips * self.config.cost_lpips +
-            loss_disc * disc_weight
+            loss_disc * disc_weight +
+            loss_kl * self.config.kl_loss_weight
         )
 
         return loss, {
             'loss_l2': loss_l2.item(),
             'loss_lpips': loss_lpips.item(),
             'loss_disc': loss_disc.item(),
-            'loss_total': loss.item()
+            'loss_kl': loss_kl.item(),
+            'loss_total': loss.item(),
         }
     
     def compute_discriminator_loss(self, real_images, fake_images):
         """Compute discriminator loss with R1 gradient penalty"""
-        # Detach fake images
-        fake_images = fake_images.detach()
         
         # Get discriminator scores
         real_scores = self.discriminator(real_images)
         fake_scores = self.discriminator(fake_images)
+
+        with torch.no_grad():
+            real_pred_mean = sum([torch.sigmoid(scores).mean().item() for scores in real_scores])
+            fake_pred_mean = sum([torch.sigmoid(scores).mean().item() for scores in fake_scores])
+
+            disc_acc_real = sum([(scores > 0).float().mean() for scores in real_scores])
+            disc_acc_fake = sum([(scores > 0).float().mean() for scores in fake_scores])
+            disc_acc = (disc_acc_real + disc_acc_fake) / 2
         
         # Standard GAN loss
-        loss_real = F.softplus(-real_scores).mean()
-        loss_fake = F.softplus(fake_scores).mean()
+        loss_real = self.gan_loss(real_scores, is_real=True)
+        loss_fake = self.gan_loss(fake_scores, is_real=False)
         loss_gan = loss_real + loss_fake
         
         # R1 gradient penalty
-        real_images.requires_grad_(True)
-        real_scores_for_grad = self.discriminator(real_images)
-        grad_real = torch.autograd.grad(
-            outputs=real_scores_for_grad.sum(),
-            inputs=real_images,
-            create_graph=True,
-            retain_graph=True,
-        )[0]
-        grad_penalty = (grad_real ** 2).sum(dim=[1, 2, 3]).mean()
+        # real_images.requires_grad_(True)
+        # real_scores_for_grad = self.discriminator(real_images)
+        # grad_real = torch.autograd.grad(
+        #     outputs=real_scores_for_grad.sum(),
+        #     inputs=real_images,
+        #     create_graph=True,
+        #     retain_graph=True,
+        # )[0]
+        # grad_penalty = (grad_real ** 2).sum(dim=[1, 2, 3]).mean()
+        # grad_penalty = torch.clamp(grad_penalty, max=100.0)
         
-        loss = loss_gan + self.config.cost_gradient_penalty * grad_penalty
+        grad_penalty = 0.0
+        penalty = self.config.cost_gradient_penalty * grad_penalty
+        loss = loss_gan + penalty
         
         return loss, {
             'disc_loss_real': loss_real.item(),
             'disc_loss_fake': loss_fake.item(),
-            'disc_grad_penalty': grad_penalty.item(),
+            # 'disc_grad_penalty': grad_penalty.item(),
             'disc_loss_total': loss.item(),
-            'disc_pred_real': torch.sigmoid(real_scores).mean().item(),
-            'disc_pred_fake': torch.sigmoid(-fake_scores).mean().item(),
+            'disc_pred_real': real_pred_mean,
+            'disc_pred_fake': fake_pred_mean,
+            'disc_accuracy': disc_acc
         }
     
     def train_step(self, batch):
         images = self._normalize_spectrogram(batch['image'])
 
         with self.accelerator.accumulate(self.vae):
-            reconstruction = self.encode_decode(images)
-            loss_vae, metrics_vae = self.compute_vae_loss(images, reconstruction)
+            reconstruction, posterior = self.encode_decode(images, self.config.train_encoder)
+            loss_vae, metrics_vae = self.compute_vae_loss(images, reconstruction, posterior)
 
             self.accelerator.backward(loss_vae)
             
@@ -163,21 +187,25 @@ class VAETrainer:
             self.optimizer.zero_grad()
         
         
-        with self.accelerator.accumulate(self.discriminator):
-            reconstruction = self.encode_decode(images)
-            loss_disc, metrics_disc = self.compute_discriminator_loss(images, reconstruction)
-            
-            self.accelerator.backward(loss_disc)
-            
-            if self.accelerator.sync_gradients:
-                self.accelerator.clip_grad_norm_(
-                    self.discriminator.parameters(), 
-                    self.config.max_grad_norm
-                )
-            
-            self.optimizer_disc.step()
-            self.scheduler_disc.step()
-            self.optimizer_disc.zero_grad()
+        if self.step % 3 == 0:
+            with self.accelerator.accumulate(self.discriminator):
+                # reconstruction = self.encode_decode(images)
+                reconstruction = reconstruction.detach()
+                loss_disc, metrics_disc = self.compute_discriminator_loss(images, reconstruction)
+                
+                self.accelerator.backward(loss_disc)
+                
+                if self.accelerator.sync_gradients:
+                    self.accelerator.clip_grad_norm_(
+                        self.discriminator.parameters(), 
+                        self.config.max_grad_norm
+                    )
+                
+                self.optimizer_disc.step()
+                self.scheduler_disc.step()
+                self.optimizer_disc.zero_grad()
+        else:
+            metrics_disc = {}
         
         metrics = {**metrics_vae, **metrics_disc}
         
@@ -203,7 +231,7 @@ class VAETrainer:
                 disable=not self.accelerator.is_local_main_process
             ):
                 images = self._normalize_spectrogram(batch['image'])
-                reconstruction = self.encode_decode(images)
+                reconstruction, _ = self.encode_decode(images)
                 loss = F.mse_loss(reconstruction, images)
                 
                 # Gather losses from all processes
@@ -236,7 +264,7 @@ class VAETrainer:
                     break
                 
                 images = self._normalize_spectrogram(batch['image'])
-                reconstruction = self.encode_decode(images)
+                reconstruction, _ = self.encode_decode(images)
                 reconstruction = self._denormalize_spectrogram(reconstruction)
                 ecgs = batch['ecgs']
                 
@@ -363,7 +391,7 @@ class VAETrainer:
         self.accelerator.print(f"Checkpoint loaded from {path}, resuming from step {self.step}")
     
     def train(self):
-        self.accelerator.print("Strating Training....")
+        self.accelerator.print("Starting Training....")
         self.vae.train()
         self.discriminator.train()
         
@@ -397,10 +425,13 @@ class VAETrainer:
                         self.accelerator.wait_for_everyone()
                     
                 # Save checkpoint
-                if self.accelerator.is_main_process and self.step % self.config.save_steps // 2 == 0:
+                if self.step % self.config.save_steps // 2 == 0:
                     self.accelerator.wait_for_everyone()
-                    self.save_checkpoint(f"{self.config.output_dir}", only_vae=True)
-                    self.save_checkpoint(f"{self.config.output_dir}")
+                    if self.accelerator.is_main_process:
+                        self.save_checkpoint(f"{self.config.output_dir}", only_vae=True)
+                        self.save_checkpoint(f"{self.config.output_dir}")
+                    
+                    self.accelerator.wait_for_everyone()
                 
                 pbar.update(1)   
             
@@ -410,7 +441,7 @@ class VAETrainer:
         
         # Final save
         self.accelerator.wait_for_everyone()
-        self.save_checkpoint(self.config.output_dir / "final_checkpoint.pt")
+        self.save_checkpoint(self.config.output_dir)
         
         # Save only the VAE in HuggingFace format (on main process)
         if self.accelerator.is_main_process:

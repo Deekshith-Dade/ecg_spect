@@ -168,7 +168,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_batch_size", type=int, default=64)
     parser.add_argument("--num_train_epochs", type=int, default=100)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
-    parser.add_argument("--learning_rate", type=float, default=1e-5)
+    parser.add_argument("--learning_rate", type=float, default=3e-6)
     parser.add_argument("--adam_beta1", type=float, default=0.9)
     parser.add_argument("--adam_beta2", type=float, default=0.999)
     parser.add_argument("--adam_weight_decay", type=float, default=1e-2)
@@ -202,5 +202,5 @@ if __name__ == "__main__":
     base_dir = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/ecg_spect_diff"
     args.output_dir = f"{base_dir}/checkpoints/{current_time}"
     args.project_name = project_name 
-    args.vae_checkpoint = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/spect_vae/checkpoints/2025-10-10_20-34-13/00010000/checkpoint_vae_00010000.pt"
+    args.vae_checkpoint = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/spect_vae/checkpoints/2025-10-11_17-50-04/00015000/checkpoint_00015000.pt"
     main(args, datasetConfig)

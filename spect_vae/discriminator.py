@@ -1,7 +1,7 @@
-from turtle import forward
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+torch.autograd.set_detect_anomaly(True)
 
 class SpectrogramPatchDiscriminator(nn.Module):
     def __init__(self, in_channels=1, base_channels=64, n_layers=3, use_spectral_norm=True):
@@ -26,7 +26,10 @@ class PatchDiscriminator(nn.Module):
     def __init__(self, in_channels, base_channels=64, n_layers=3, use_spectral_norm=True):
         super().__init__()
 
-        norm_layer = nn.BatchNorm2d
+        def norm_layer(num_channels):
+            num_groups = min(32, max(1, num_channels // 4))
+            return nn.GroupNorm(num_groups, num_channels)
+
         if use_spectral_norm:
             norm_fn = lambda layer: nn.utils.spectral_norm(layer)
         else:
@@ -34,7 +37,7 @@ class PatchDiscriminator(nn.Module):
         
         layers = [
             norm_fn(nn.Conv2d(in_channels, base_channels, kernel_size=4, stride=2, padding=1)),
-            nn.LeakyReLU(0.2, inplace=True)
+            nn.LeakyReLU(0.2, inplace=False)
         ]
 
         nf_mult = 1
@@ -50,7 +53,7 @@ class PatchDiscriminator(nn.Module):
                     stride = 2
                 )),
                 norm_layer(base_channels*nf_mult),
-                nn.LeakyReLU(0.2, inplace=True)
+                nn.LeakyReLU(0.2, inplace=False)
             ]
         
         nf_mult_prev = nf_mult
@@ -64,7 +67,7 @@ class PatchDiscriminator(nn.Module):
                 padding = 1
             )),
             norm_layer(base_channels * nf_mult),
-            nn.LeakyReLU(0.2, inplace=True)
+            nn.LeakyReLU(0.2, inplace=False)
         ]
 
         layers += [
