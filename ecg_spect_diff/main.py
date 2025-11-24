@@ -88,7 +88,11 @@ def main(args, dataset_config):
     # tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", subfolder="tokenizer")
     # text_encoder = BertModel.from_pretrained("bert-base-uncased", subfolder="bert")
     vae = AutoencoderKL.from_pretrained(args.model_name_or_path, subfolder="vae")
-    unet = UNet2DConditionModel.from_pretrained(args.model_name_or_path, subfolder="unet")
+    # random initialized unet
+    unet_config = UNet2DConditionModel.load_config(args.model_name_or_path, subfolder="unet")
+    unet = UNet2DConditionModel.from_config(unet_config)
+
+    # unet = UNet2DConditionModel.from_pretrained(args.model_name_or_path, subfolder="unet")
 
     # unet = UNet2DModel.from_pretrained("CompVis/ldm-celebahq-256", subfolder="unet")
     # vae = VQModel.from_pretrained("CompVis/ldm-celebahq-256", subfolder="vqvae")
@@ -122,9 +126,9 @@ def main(args, dataset_config):
     optimizer = torch.optim.AdamW(
         unet.parameters(),
         lr=args.learning_rate,
-        betas=(args.adam_beta1, args.adam_beta2),
-        weight_decay=args.adam_weight_decay,
-        eps=args.adam_epsilon,
+        # betas=(args.adam_beta1, args.adam_beta2),
+        # weight_decay=args.adam_weight_decay,
+        # eps=args.adam_epsilon,
     )
 
     unet, vae, text_encoder, tokenizer, noise_scheduler, optimizer, train_dataloader = accelerator.prepare(
@@ -165,16 +169,16 @@ def main(args, dataset_config):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Finetune Stable Diffusion on ECG Spectrograms")
     parser.add_argument("--model_name_or_path", type=str, default="runwayml/stable-diffusion-v1-5")
-    parser.add_argument("--train_batch_size", type=int, default=64)
+    parser.add_argument("--train_batch_size", type=int, default=64*4)
     parser.add_argument("--num_train_epochs", type=int, default=100)
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1)
-    parser.add_argument("--learning_rate", type=float, default=3e-6)
+    parser.add_argument("--learning_rate", type=float, default=1e-5)
     parser.add_argument("--adam_beta1", type=float, default=0.9)
     parser.add_argument("--adam_beta2", type=float, default=0.999)
     parser.add_argument("--adam_weight_decay", type=float, default=1e-2)
     parser.add_argument("--adam_epsilon", type=float, default=1e-08)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
-    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--save_steps", type=int, default=2500)
     parser.add_argument("--save_epochs", type=int, default=1)
     parser.add_argument("--logging_steps", type=int, default=1000)
@@ -202,5 +206,5 @@ if __name__ == "__main__":
     base_dir = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/ecg_spect_diff"
     args.output_dir = f"{base_dir}/checkpoints/{current_time}"
     args.project_name = project_name 
-    args.vae_checkpoint = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/spect_vae/checkpoints/2025-10-11_17-50-04/00015000/checkpoint_00015000.pt"
+    args.vae_checkpoint = "/uufs/sci.utah.edu/projects/ClinicalECGs/DeekshithMLECG/ecg-spect/spect_vae/checkpoints/2025-10-15_15-16-36/00050000/checkpoint_vae_00050000.pt"
     main(args, datasetConfig)

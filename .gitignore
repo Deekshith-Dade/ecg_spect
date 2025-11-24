@@ -5,9 +5,12 @@ __pycache__
 .venv
 /venv
 
+ecg_classify/dataset
 /data
 /lvef_patients
 /parquet_patients
+/generated_ecgs
+/classify_models
 *checkpoints
 
 *.log
@@ -15,3 +18,4 @@ __pycache__
 *.ipynb
 *.parquet
 *.csv
+*.png

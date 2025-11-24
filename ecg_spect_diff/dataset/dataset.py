@@ -143,9 +143,8 @@ def getKCLTrainTestDataset(dataset_config):
     numTest = int(0.1 * numPatients)
     numTrain = numPatients - numTest
     assert (numPatients == numTrain + numTest), "Train/Test spilt incorrectly"
-    RandomSeedSoAlswaysGetSameDatabseSplit = 1
     patientIds = list(np.unique(kclCohort['PatId']))
-    random.Random(RandomSeedSoAlswaysGetSameDatabseSplit).shuffle(patientIds)
+    random.Random(randSeed).shuffle(patientIds)
 
     trainPatientInds = patientIds[:numTrain]
     testPatientInds = patientIds[numTrain:numTest + numTrain]

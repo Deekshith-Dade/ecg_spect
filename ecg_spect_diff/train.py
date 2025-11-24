@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 from tqdm.auto import tqdm
 
@@ -69,6 +70,16 @@ class Training:
                     scheduler=self.noise_scheduler
                 )
                 pipeline.save_pretrained(self.args.output_dir)
+                
+                # Save global_min and global_max for denormalization
+                normalization_params = {
+                    'global_min': float(self.global_min) if isinstance(self.global_min, torch.Tensor) else self.global_min,
+                    'global_max': float(self.global_max) if isinstance(self.global_max, torch.Tensor) else self.global_max
+                }
+                norm_params_path = os.path.join(self.args.output_dir, 'normalization_params.json')
+                with open(norm_params_path, 'w') as f:
+                    json.dump(normalization_params, f, indent=2)
+                print(f"Saved normalization parameters to {norm_params_path}")
     
     def train_one_epoch(self, epoch):
         self.unet.train()
@@ -173,7 +184,7 @@ class Training:
                 # Log to wandb
                 self.accelerator.log(training_log)
                 
-            if step % self.args.save_steps == 0:
+            if self.accelerator.is_main_process and step % self.args.save_steps == 0:
                 self.save_progress(epoch, step)
                 
         return  total_loss / len(self.dataloader)
@@ -204,6 +215,27 @@ class Training:
         if self.accelerator.is_main_process:
             save_path = os.path.join(self.args.output_dir, f'checkpoint-{epoch}-{step}')
             self.accelerator.save_state(save_path)
+            pipeline = StableDiffusionPipeline.from_pretrained(
+                self.args.model_name_or_path,
+                unet=self.accelerator.unwrap_model(self.unet),
+                text_encoder=self.accelerator.unwrap_model(self.text_encoder),
+                vae=self.accelerator.unwrap_model(self.vae),
+                tokenizer=self.tokenizer,
+                scheduler=self.noise_scheduler
+            )
+            save_path = os.path.join(self.args.output_dir, f'pipeline_checkpoint-{epoch}-{step}')
+            pipeline.save_pretrained(save_path)
+            
+            # Save global_min and global_max for denormalization
+            normalization_params = {
+                'global_min': float(self.global_min) if isinstance(self.global_min, torch.Tensor) else self.global_min,
+                'global_max': float(self.global_max) if isinstance(self.global_max, torch.Tensor) else self.global_max
+            }
+            norm_params_path = os.path.join(save_path, 'normalization_params.json')
+            with open(norm_params_path, 'w') as f:
+                json.dump(normalization_params, f, indent=2)
+            print(f"Saved normalization parameters to {norm_params_path}")
+            
 
     def sample_images(self, pipeline, num_images=2):
         pipeline.unet.eval()
